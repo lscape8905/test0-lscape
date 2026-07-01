@@ -717,7 +717,7 @@ ${regulatory.checkList.map(c => `  * **[${c.status}]** ${c.rule}: ${c.detail}`).
             const buffer = 0.0001;
             const bboxStr = `${minx-buffer},${miny-buffer},${maxx+buffer},${maxy+buffer}`;
             const vkey = "C212FD59-03AA-3762-8CB2-CC987A1CA655";
-            const vdom = "https://lscape8905.github.io";
+            const vdom = window.location.origin + window.location.pathname;
 
             // JSONP Helper for VWorld API to bypass CORS/Referer restrictions
             const fetchJsonp = (url) => {

@@ -208,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Add VWorld Cadastral Map (WMS)
     const vworldKey = 'C212FD59-03AA-3762-8CB2-CC987A1CA655';
-    const vworldDomain = 'https://lscape8905.github.io';
+    const vworldDomain = window.location.origin + window.location.pathname;
 
     const vworldCadastral = L.tileLayer.wms("https://api.vworld.kr/req/wms?", {
       layers: 'lp_pa_cbnd_bonbun,lp_pa_cbnd_bubun',
@@ -261,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const maxy = pt.y + offset;
       
       const vworldKey = 'C212FD59-03AA-3762-8CB2-CC987A1CA655';
-      const vworldDomain = window.location.origin;
+      const vworldDomain = window.location.origin + window.location.pathname;
       
       const wfsUrl = `https://api.vworld.kr/req/wfs?SERVICE=WFS&REQUEST=GetFeature&TYPENAME=lp_pa_cbnd_bubun&BBOX=${minx},${miny},${maxx},${maxy},EPSG:3857&KEY=${vworldKey}&DOMAIN=${vworldDomain}&OUTPUT=text/javascript`;
       
@@ -586,7 +586,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const vworldKey = 'C212FD59-03AA-3762-8CB2-CC987A1CA655';
-        const vworldDomain = 'https://lscape8905.github.io';
+        const vworldDomain = window.location.origin + window.location.pathname;
 
         // Query layers in parallel
         const layers = ['LT_C_UQ111', 'LT_C_UQ112', 'LT_C_UQ113', 'LT_C_UQ114', 'LT_C_UQ121'];
