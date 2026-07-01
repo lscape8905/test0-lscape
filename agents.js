@@ -137,13 +137,43 @@
       { label: '15도 이상 (급경사)', area: Math.round(area * steepRatio / 100), ratio: steepRatio, highlight: steepRatio > 50 }
     ];
 
-    const minElev = 130 + Math.random() * 5;
+    // Gather heights inside mask to calculate exact elevation distribution
+    const heightsInside = [];
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (mask[y][x]) {
+          heightsInside.push(grid[y][x]);
+        }
+      }
+    }
+    if (heightsInside.length === 0) {
+      heightsInside.push(baseHeight);
+    }
+
+    const minH = Math.min(...heightsInside);
+    const maxH = Math.max(...heightsInside);
+    const range = maxH - minH || 1;
+
+    let b1 = 0, b2 = 0, b3 = 0, b4 = 0;
+    heightsInside.forEach(h => {
+      if (h <= minH + range * 0.25) b1++;
+      else if (h <= minH + range * 0.50) b2++;
+      else if (h <= minH + range * 0.75) b3++;
+      else b4++;
+    });
+
+    const totalCells = heightsInside.length;
+    const r1 = Math.round((b1 / totalCells) * 100);
+    const r2 = Math.round((b2 / totalCells) * 100);
+    const r3 = Math.round((b3 / totalCells) * 100);
+    const r4 = 100 - (r1 + r2 + r3);
+
     const elevStats = [
       { label: '합계', area: area, ratio: 100, isTotal: true },
-      { label: '130m~135m', area: Math.round(area * 0.46), ratio: 46.0, highlight: true },
-      { label: '135m~140m', area: Math.round(area * 0.32), ratio: 32.0 },
-      { label: '140m~145m', area: Math.round(area * 0.07), ratio: 7.0 },
-      { label: '145m 이상', area: Math.round(area * 0.15), ratio: 15.0 }
+      { label: `${Math.round(minH)}m ~ ${Math.round(minH + range * 0.25)}m`, area: Math.round(area * r1 / 100), ratio: r1, highlight: r1 > 40 },
+      { label: `${Math.round(minH + range * 0.25)}m ~ ${Math.round(minH + range * 0.50)}m`, area: Math.round(area * r2 / 100), ratio: r2, highlight: r2 > 40 },
+      { label: `${Math.round(minH + range * 0.50)}m ~ ${Math.round(minH + range * 0.75)}m`, area: Math.round(area * r3 / 100), ratio: r3, highlight: r3 > 40 },
+      { label: `${Math.round(minH + range * 0.75)}m 이상`, area: Math.round(area * r4 / 100), ratio: r4, highlight: r4 > 40 }
     ];
 
     return {
@@ -237,6 +267,29 @@
   }
 
   // Generate detailed land use check (토지이음 데이터 시뮬레이터)
+  // Helper to map Korean VWorld zoning strings to internal zoning codes
+  function mapKoreanZoningToCode(zones) {
+    if (!zones || zones.length === 0) return null;
+    const text = zones.join(' ');
+    if (text.includes('상업')) return 'commercial';
+    if (text.includes('주거')) return 'residential';
+    if (text.includes('공업')) return 'industrial';
+    if (text.includes('녹지') || text.includes('개발제한')) return 'greenbelt';
+    if (text.includes('계획관리')) return 'planned-management';
+    if (text.includes('생산관리') || text.includes('보전관리')) return 'production-management';
+    if (text.includes('농림')) return 'production-management';
+    return null;
+  }
+
+  // Hash function for seeded pseudo-random stats
+  function getSeed(text) {
+    let hash = 0;
+    for (let i = 0; i < text.length; i++) {
+      hash = text.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return Math.abs(hash);
+  }
+
   function generateRegulatory(zoning, subDistricts, area, mcpData, projectType, realZoning) {
     const minLandscapeRatios = { residential: 15, commercial: 10, industrial: 8, greenbelt: 40, 'planned-management': 10, 'production-management': 5 };
     const maxLimits = {
@@ -369,26 +422,56 @@
       { stage: '최종. 조경 공사 준공 필증 획득', duration: '15일', task: '의무 조경 식재 본수 및 생태면적률 실사 검토 후 지자체 준공 필증 수령' }
     ].filter(Boolean);
 
-    // Build Statistical Arrays for Dashboard
+    // Build Statistical Arrays for Dashboard using pseudo-random seeding
+    const seed = getSeed(JSON.stringify(realZoning || '') + area);
+    
+    let rEcology1 = 0, rEcology2 = 0, rEcology3 = 0, rEcology4 = 0;
+    const isGreenOrMtn = zoning === 'greenbelt' || zoning.includes('management');
+    if (isGreenOrMtn) {
+      rEcology1 = 5 + (seed % 15); // 5% - 19%
+      rEcology2 = 40 + (seed % 20); // 40% - 59%
+      rEcology3 = 10 + (seed % 15); // 10% - 24%
+      rEcology4 = 100 - (rEcology1 + rEcology2 + rEcology3);
+    } else {
+      rEcology1 = 0;
+      rEcology2 = seed % 5; // 0% - 4%
+      rEcology3 = 10 + (seed % 15); // 10% - 24%
+      rEcology4 = 100 - (rEcology1 + rEcology2 + rEcology3);
+    }
+
     const ecologyStats = [
       { label: '합계', area: area, ratio: 100, isTotal: true },
-      { label: '별도관리지역', area: Math.round(area * 0.8), ratio: 80.0 },
-      { label: '2등급', area: Math.round(area * 0.15), ratio: 15.0 },
-      { label: '3등급', area: Math.round(area * 0.05), ratio: 5.0 }
+      { label: '1등급', area: Math.round(area * rEcology1 / 100), ratio: rEcology1, highlight: rEcology1 > 20 },
+      { label: '2등급', area: Math.round(area * rEcology2 / 100), ratio: rEcology2, highlight: rEcology2 > 40 },
+      { label: '3등급', area: Math.round(area * rEcology3 / 100), ratio: rEcology3, highlight: rEcology3 > 40 },
+      { label: '별도관리지역', area: Math.round(area * rEcology4 / 100), ratio: rEcology4, highlight: rEcology4 > 50 }
     ];
 
-    const isMountain = zoning.includes('management') || zoning === 'greenbelt';
+    let rMtn1 = 0, rMtn2 = 0, rMtn3 = 0;
+    if (isGreenOrMtn) {
+      rMtn1 = 60 + (seed % 20); // 60% - 79% (준보전산지)
+      rMtn2 = 15 + (seed % 10); // 15% - 24% (보전산지)
+      rMtn3 = 100 - (rMtn1 + rMtn2); // 산지외
+    } else {
+      rMtn1 = 5 + (seed % 8); // 5% - 12%
+      rMtn2 = 0;
+      rMtn3 = 100 - (rMtn1 + rMtn2);
+    }
     const mountainStats = [
       { label: '합계', area: area, ratio: 100, isTotal: true },
-      { label: '준보전산지', area: Math.round(area * (isMountain ? 0.7 : 0.1)), ratio: (isMountain ? 70.0 : 10.0), highlight: isMountain },
-      { label: '보전산지', area: Math.round(area * (isMountain ? 0.3 : 0.0)), ratio: (isMountain ? 30.0 : 0.0) },
-      { label: '산지외', area: Math.round(area * (isMountain ? 0.0 : 0.9)), ratio: (isMountain ? 0.0 : 90.0), highlight: !isMountain }
+      { label: '준보전산지', area: Math.round(area * rMtn1 / 100), ratio: rMtn1, highlight: rMtn1 > 50 },
+      { label: '보전산지', area: Math.round(area * rMtn2 / 100), ratio: rMtn2, highlight: rMtn2 > 20 },
+      { label: '산지외 구역', area: Math.round(area * rMtn3 / 100), ratio: rMtn3, highlight: rMtn3 > 50 }
     ];
 
+    const rOwn1 = 15 + (seed % 35); // 15% - 49% (국유지)
+    const rOwn2 = 5 + (seed % 15);  // 5% - 19% (공유지)
+    const rOwn3 = 100 - (rOwn1 + rOwn2); // 사유지
     const ownershipStats = [
       { label: '합계', area: area, ratio: 100, isTotal: true },
-      { label: '국유지 (환경부 등)', area: Math.round(area * 0.49), ratio: 49.0 },
-      { label: '사유지', area: Math.round(area * 0.51), ratio: 51.0, highlight: true }
+      { label: '국유지 (산림청/환경부 등)', area: Math.round(area * rOwn1 / 100), ratio: rOwn1, highlight: rOwn1 > 40 },
+      { label: '공유지 (지자체 등)', area: Math.round(area * rOwn2 / 100), ratio: rOwn2, highlight: rOwn2 > 40 },
+      { label: '사유지 (종중/개인)', area: Math.round(area * rOwn3 / 100), ratio: rOwn3, highlight: rOwn3 > 40 }
     ];
 
     const catMap = {};
@@ -634,7 +717,7 @@ ${regulatory.checkList.map(c => `  * **[${c.status}]** ${c.rule}: ${c.detail}`).
             const buffer = 0.0001;
             const bboxStr = `${minx-buffer},${miny-buffer},${maxx+buffer},${maxy+buffer}`;
             const vkey = "C212FD59-03AA-3762-8CB2-CC987A1CA655";
-            const vdom = "https://lscape8905.github.io/test0-lscape/";
+            const vdom = "https://lscape8905.github.io";
 
             // JSONP Helper for VWorld API to bypass CORS/Referer restrictions
             const fetchJsonp = (url) => {

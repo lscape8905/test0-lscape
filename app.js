@@ -208,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Add VWorld Cadastral Map (WMS)
     const vworldKey = 'C212FD59-03AA-3762-8CB2-CC987A1CA655';
-    const vworldDomain = 'https://lscape8905.github.io/test0-lscape/';
+    const vworldDomain = 'https://lscape8905.github.io';
 
     const vworldCadastral = L.tileLayer.wms("https://api.vworld.kr/req/wms?", {
       layers: 'lp_pa_cbnd_bonbun,lp_pa_cbnd_bubun',
@@ -261,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const maxy = pt.y + offset;
       
       const vworldKey = 'C212FD59-03AA-3762-8CB2-CC987A1CA655';
-      const vworldDomain = 'https://lscape8905.github.io/test0-lscape/';
+      const vworldDomain = window.location.origin;
       
       const wfsUrl = `https://api.vworld.kr/req/wfs?SERVICE=WFS&REQUEST=GetFeature&TYPENAME=lp_pa_cbnd_bubun&BBOX=${minx},${miny},${maxx},${maxy},EPSG:3857&KEY=${vworldKey}&DOMAIN=${vworldDomain}&OUTPUT=text/javascript`;
       
@@ -514,16 +514,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Heuristic mock engine for Eum API
-  async function fetchEumData(address) {
+  // Heuristic & Real VWorld API engine for Eum data auto-fill
+  async function fetchEumData(address, boundaryCoords) {
     const logBox = document.getElementById('analysis-log');
     logBox.innerHTML = '';
     const div = document.createElement('div');
     div.className = 'log-entry orchestrator';
-    div.innerHTML = `<span class="time">[${new Date().toLocaleTimeString()}]</span> <span class="badge">EUM API</span> 주소 기반 지형/용도지역 자동 판별 중...`;
+    div.innerHTML = `<span class="time">[${new Date().toLocaleTimeString()}]</span> <span class="badge">EUM API</span> 주소 및 지적 바운더리 기반 용도지역/지구 자동 판별 중...`;
     logBox.appendChild(div);
-
-    await new Promise(r => setTimeout(r, 1500)); // Simulate API latency
 
     let inferredTerrain = 'hilly';
     let inferredRegion = 'central';
@@ -546,7 +544,107 @@ document.addEventListener('DOMContentLoaded', () => {
       inferredZoning = 'residential';
     }
 
-    // Update UI elements with inferred data
+    // Try REAL VWorld API lookup if boundary coordinates are available
+    if (boundaryCoords && boundaryCoords.length > 0) {
+      try {
+        let minx = 999, miny = 999, maxx = -999, maxy = -999;
+        boundaryCoords.forEach(pt => {
+          const x = pt[0]; const y = pt[1];
+          if (x < minx) minx = x; if (x > maxx) maxx = x;
+          if (y < miny) miny = y; if (y > maxy) maxy = y;
+        });
+        const buffer = 0.0001;
+        const bboxStr = `${minx-buffer},${miny-buffer},${maxx+buffer},${maxy+buffer}`;
+
+        // JSONP Helper inside app.js
+        const fetchJsonpApp = (url) => {
+          return new Promise((resolve) => {
+            const callbackName = 'vworld_jsonp_eum_' + Math.round(1000000 * Math.random());
+            const script = document.createElement('script');
+            const timeoutId = setTimeout(() => {
+              delete window[callbackName];
+              if (document.body.contains(script)) document.body.removeChild(script);
+              resolve(null);
+            }, 2500);
+            
+            window[callbackName] = function(data) {
+              clearTimeout(timeoutId);
+              delete window[callbackName];
+              if (document.body.contains(script)) document.body.removeChild(script);
+              resolve(data);
+            };
+            
+            script.src = url + '&format=json&callback=' + callbackName;
+            script.onerror = function() {
+              clearTimeout(timeoutId);
+              delete window[callbackName];
+              if (document.body.contains(script)) document.body.removeChild(script);
+              resolve(null);
+            };
+            document.body.appendChild(script);
+          });
+        };
+
+        const vworldKey = 'C212FD59-03AA-3762-8CB2-CC987A1CA655';
+        const vworldDomain = 'https://lscape8905.github.io';
+
+        // Query layers in parallel
+        const layers = ['LT_C_UQ111', 'LT_C_UQ112', 'LT_C_UQ113', 'LT_C_UQ114', 'LT_C_UQ121'];
+        const promises = layers.map(layer => {
+          const url = `https://api.vworld.kr/req/data?service=data&request=GetFeature&data=${layer}&key=${vworldKey}&domain=${vworldDomain}&geomFilter=BOX(${bboxStr})`;
+          return fetchJsonpApp(url);
+        });
+
+        const results = await Promise.all(promises);
+        let detectedZoningName = '';
+        let hasLandscapeZone = false;
+
+        results.forEach((json, idx) => {
+          if (json?.response?.result?.featureCollection?.features) {
+            const features = json.response.result.featureCollection.features;
+            features.forEach(f => {
+              if (f.properties) {
+                if (idx < 4) { // Zoning layers
+                  Object.values(f.properties).forEach(val => {
+                    if (typeof val === 'string' && (val.endsWith('지역') || val.endsWith('지구'))) {
+                      detectedZoningName = val;
+                    }
+                  });
+                } else if (idx === 4) { // Landscape zone
+                  hasLandscapeZone = true;
+                }
+              }
+            });
+          }
+        });
+
+        if (detectedZoningName) {
+          const text = detectedZoningName;
+          if (text.includes('상업')) inferredZoning = 'commercial';
+          else if (text.includes('주거')) inferredZoning = 'residential';
+          else if (text.includes('공업')) inferredZoning = 'industrial';
+          else if (text.includes('녹지') || text.includes('개발제한')) inferredZoning = 'greenbelt';
+          else if (text.includes('계획관리')) inferredZoning = 'planned-management';
+          else if (text.includes('생산관리') || text.includes('보전관리')) inferredZoning = 'production-management';
+          else if (text.includes('농림')) inferredZoning = 'production-management';
+          
+          // If we detected a real zoning, adjust inferred terrain/region logically
+          if (inferredZoning === 'greenbelt' || inferredZoning === 'production-management') {
+            inferredTerrain = 'mountainous';
+            inferredRegion = 'mountain';
+          }
+        }
+        
+        if (hasLandscapeZone && !inferredSubDistricts.includes('landscape')) {
+          inferredSubDistricts.push('landscape');
+        }
+
+      } catch (err) {
+        console.warn("VWorld auto-zoning lookup failed:", err);
+      }
+    }
+
+    // Update UI elements with inferred/detected data
     document.getElementById('select-terrain').value = inferredTerrain;
     document.getElementById('select-region').value = inferredRegion;
     document.getElementById('select-zoning').value = inferredZoning;
@@ -560,7 +658,7 @@ document.addEventListener('DOMContentLoaded', () => {
     finishDiv.className = 'log-entry orchestrator';
     finishDiv.innerHTML = `<span class="time">[${new Date().toLocaleTimeString()}]</span> <span class="badge">EUM API</span> 판별 완료 (지형: ${inferredTerrain}, 용도지역: ${inferredZoning})`;
     logBox.appendChild(finishDiv);
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 500));
   }
 
   // Handle Form Submission (Analysis Start)
@@ -585,14 +683,15 @@ document.addEventListener('DOMContentLoaded', () => {
       terminalEl.querySelector('.status-text').innerText = 'Running';
     });
     
-    // 1. Run Auto-Fetch Mock Engine
+    // Parse coordinates first so fetchEumData can use them for VWorld spatial lookup
+    const boundaryCoords = parseCoordinatesInput();
+    
+    // 1. Run Auto-Fetch Mock & Real VWorld Engine
     const rawAddress = document.getElementById('input-address').value;
-    await fetchEumData(rawAddress);
+    await fetchEumData(rawAddress, boundaryCoords);
     
     const subDistricts = Array.from(document.querySelectorAll('input[name="sub-district"]:checked'))
       .map(cb => cb.value);
-      
-    const boundaryCoords = parseCoordinatesInput();
 
     // Extract selected parcels metadata
     const parcelList = [];
@@ -822,7 +921,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Tab 4: Regulatory Eum.go.kr Document Sheet
+    let primaryCategory = '임야';
+    if (siteInput.parcelList && siteInput.parcelList.length > 0) {
+      primaryCategory = siteInput.parcelList[0].category;
+    }
     document.getElementById('doc-address').innerText = siteInput.address;
+    document.getElementById('doc-category').innerText = primaryCategory;
     document.getElementById('doc-area').innerText = `${siteInput.area.toLocaleString()} ㎡`;
     document.getElementById('doc-zoning').innerHTML = regulatory.officialDocument.zoningLaw;
     document.getElementById('doc-other-laws').innerHTML = regulatory.officialDocument.otherLaws;
