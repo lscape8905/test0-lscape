@@ -207,8 +207,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }).addTo(leafletMap);
 
     // Add VWorld Cadastral Map (WMS)
-    const vworldKey = '3FA2E72F-EF6A-3AA2-8A65-9A96ED867AFA';
-    const vworldDomain = window.location.origin;
+    const vworldKey = 'C212FD59-03AA-3762-8CB2-CC987A1CA655';
+    const vworldDomain = 'https://lscape8905.github.io/test0-lscape/';
 
     const vworldCadastral = L.tileLayer.wms("https://api.vworld.kr/req/wms?", {
       layers: 'lp_pa_cbnd_bonbun,lp_pa_cbnd_bubun',
@@ -260,8 +260,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const maxx = pt.x + offset;
       const maxy = pt.y + offset;
       
-      const vworldKey = '3FA2E72F-EF6A-3AA2-8A65-9A96ED867AFA';
-      const vworldDomain = window.location.origin;
+      const vworldKey = 'C212FD59-03AA-3762-8CB2-CC987A1CA655';
+      const vworldDomain = 'https://lscape8905.github.io/test0-lscape/';
       
       const wfsUrl = `https://api.vworld.kr/req/wfs?SERVICE=WFS&REQUEST=GetFeature&TYPENAME=lp_pa_cbnd_bubun&BBOX=${minx},${miny},${maxx},${maxy},EPSG:3857&KEY=${vworldKey}&DOMAIN=${vworldDomain}&OUTPUT=text/javascript`;
       

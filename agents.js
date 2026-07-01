@@ -633,8 +633,8 @@ ${regulatory.checkList.map(c => `  * **[${c.status}]** ${c.rule}: ${c.detail}`).
             extractBounds(boundaryCoords);
             const buffer = 0.0001;
             const bboxStr = `${minx-buffer},${miny-buffer},${maxx+buffer},${maxy+buffer}`;
-            const vkey = "3FA2E72F-EF6A-3AA2-8A65-9A96ED867AFA";
-            const vdom = "https://delightful-genie-a4d3bd.netlify.app";
+            const vkey = "C212FD59-03AA-3762-8CB2-CC987A1CA655";
+            const vdom = "https://lscape8905.github.io/test0-lscape/";
 
             // JSONP Helper for VWorld API to bypass CORS/Referer restrictions
             const fetchJsonp = (url) => {
