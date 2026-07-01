@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LSCAPE-HONG - AI 조경설계 기초분석 플랫폼</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+  <!-- Marked.js for rendering Orchestrator Markdown reports -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- DXF Parser for CAD uploads -->
+  <script src="https://cdn.jsdelivr.net/npm/dxf-parser@1.1.2/dist/dxf-parser.js"></script>
+  <!-- Leaflet Map & Geoman Drawing -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@latest/dist/leaflet-geoman.css" />
+  <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@latest/dist/leaflet-geoman.min.js"></script>
+  <!-- Turf.js for spatial calculations (Area, Center) -->
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <div class="app-background-glow"></div>
+  
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-logo">
+          <i data-lucide="sprout" class="icon-emerald"></i>
+        </div>
+        <div>
+          <h1>LSCAPE-HONG</h1>
+          <p class="subtitle">AI Landscape Engineering Site Analyzer (토지이음 규제 & 경계 분석)</p>
+        </div>
+      </div>
+      <div class="header-badge-group">
+        <div class="header-badge">
+          <span class="status-dot pulsing"></span>
+          <span>Orchestrator Online</span>
+        </div>
+        <a href="https://www.eum.go.kr" target="_blank" class="btn-secondary btn-sm header-link-btn">
+          <span>토지이음 공식 사이트</span>
+          <i data-lucide="external-link"></i>
+        </a>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+      
+      <!-- Left: Site Input Form -->
+      <section class="sidebar-panel glass-card">
+        <div class="panel-header">
+          <i data-lucide="sliders"></i>
+          <h2>대상지 매개변수 설정</h2>
+        </div>
+        
+        <form id="analysis-form" class="input-form">
+          <div class="form-group">
+            <label for="input-address">
+              <i data-lucide="map-pin"></i> 대상지 주소/위치 <span style="font-size: 0.75rem; color: var(--color-cyan);">[자동 판별]</span>
+            </label>
+            <input type="text" id="input-address" placeholder="지도에서 경계를 그리면 자동 입력됩니다" disabled class="auto-detected-input">
+          </div>
+
+          <div class="form-group">
+            <label for="input-area">
+              <i data-lucide="maximize"></i> 부지 면적 (㎡) <span style="font-size: 0.75rem; color: var(--color-cyan);">[자동 판별]</span>
+            </label>
+            <input type="text" id="input-area" placeholder="지도에서 경계를 그리면 자동 입력됩니다" disabled class="auto-detected-input">
+          </div>
+
+          <!-- GeoJSON & CAD Boundary Section -->
+          <div class="form-group boundary-group">
+            <label>
+              <i data-lucide="map"></i> 대상지 경계선 설정 (GeoJSON / DXF)
+            </label>
+            <div class="boundary-actions">
+              <button type="button" id="btn-load-sample" class="btn-secondary btn-xs">
+                샘플 경계 불러오기
+              </button>
+              <label class="file-upload-label btn-secondary btn-xs">
+                <span>파일 업로드</span>
+                <input type="file" id="file-geojson" accept=".geojson, .json, .dxf, .dwg" class="hidden" />
+              </label>
+              <button type="button" id="btn-open-map" class="btn-secondary btn-xs" style="color: var(--color-emerald); border-color: var(--color-emerald);">
+                <i data-lucide="map-pin"></i> 지도에서 직접 그리기
+              </button>
+            </div>
+            <div class="file-help" style="margin-top: 5px;">업로드 가능 형식: GeoJSON, DXF, DWG</div>
+            <textarea id="text-geojson" rows="4" placeholder="GeoJSON, JSON 배열 또는 DXF 파일을 업로드하십시오. [ [x, y], [x, y], ... ]"></textarea>
+          </div>
+
+          <div class="form-group" style="display: none;">
+            <label for="select-terrain">
+              <i data-lucide="mountain"></i> 지형 물리적 유형 <span style="font-size: 0.75rem; color: var(--color-cyan);">[자동 판별]</span>
+            </label>
+            <select id="select-terrain" disabled class="auto-detected-input">
+              <option value="flat">평탄지 (Flat Plain, 경사 0-5%)</option>
+              <option value="hilly" selected>구릉지 (Rolling Hills, 경사 5-15%)</option>
+              <option value="mountainous">산악지 (Mountainous, 경사 >15%)</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="display: none;">
+            <label for="select-region">
+              <i data-lucide="compass"></i> 기후 및 행정 구역 <span style="font-size: 0.75rem; color: var(--color-cyan);">[자동 판별]</span>
+            </label>
+            <select id="select-region" disabled class="auto-detected-input">
+              <option value="central" selected>중부 내륙 지방 (Central Zone)</option>
+              <option value="southern">남부 온화 지방 (Southern Warm Zone)</option>
+              <option value="coastal">해안 해풍 지역 (Coastal Winds Zone)</option>
+              <option value="mountain">고산/한랭 지대 (Alpine Zone)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="select-project-type">
+              <i data-lucide="briefcase"></i> 개발 사업 유형 (Project Type)
+            </label>
+            <select id="select-project-type">
+              <option value="urban-park" selected>도시공원 및 녹지 조성 (Urban Park)</option>
+              <option value="golf-course">체육시설 / 골프장 조성 (Golf Course)</option>
+              <option value="tourism-complex">관광단지 조성 (Tourism Complex)</option>
+              <option value="residential-complex">대규모 주택단지 조경 (Residential Landscaping)</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="display: none;">
+            <label for="select-zoning">
+              <i data-lucide="scale"></i> 용도지역 규제 분류 <span style="font-size: 0.75rem; color: var(--color-cyan);">[자동 판별]</span>
+            </label>
+            <select id="select-zoning" disabled class="auto-detected-input">
+              <option value="residential" selected>일반주거지역 (Residential)</option>
+              <option value="commercial">일반상업지역 (Commercial)</option>
+              <option value="industrial">준공업지역 (Industrial)</option>
+              <option value="greenbelt">개발제한구역 (Greenbelt Preservation)</option>
+              <option value="planned-management">계획관리지역 (Planned Management)</option>
+              <option value="production-management">생산관리지역 (Production Management)</option>
+            </select>
+          </div>
+
+          <!-- Sub-District Checkbox Overlays (토지이음 중첩규제) -->
+          <div class="form-group" style="display: none;">
+            <label><i data-lucide="shield-alert"></i> 토지이음 중첩 규제지구 설정 <span style="font-size: 0.75rem; color: var(--color-cyan);">[자동 판별]</span></label>
+            <div class="checkbox-group disabled-group">
+              <label class="checkbox-label" style="opacity: 0.6; cursor: not-allowed;">
+                <input type="checkbox" name="sub-district" value="landscape" disabled>
+                <span>경관지구 (Landscape Zone)</span>
+              </label>
+              <label class="checkbox-label" style="opacity: 0.6; cursor: not-allowed;">
+                <input type="checkbox" name="sub-district" value="heritage" disabled>
+                <span>역사문화환경보존지역 (Heritage)</span>
+              </label>
+              <label class="checkbox-label" style="opacity: 0.6; cursor: not-allowed;">
+                <input type="checkbox" name="sub-district" value="water-protection" disabled>
+                <span>상수원보호구역 (Water Source)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="select-concept">
+              <i data-lucide="sparkles"></i> 조경 마스터플랜 컨셉
+            </label>
+            <select id="select-concept">
+              <option value="smart-eco" selected>스마트 생태체험 공원 (Eco-Smart Park)</option>
+              <option value="healing-garden">치유와 회복의 정원 (Healing Woodland)</option>
+              <option value="urban-forest">도심형 밀집 숲정원 (Urban Pocket Forest)</option>
+              <option value="water-terrace">수변 테라스 정원 (Hydro-Terrace Meadow)</option>
+            </select>
+          </div>
+
+          <button type="submit" id="btn-submit" class="btn-primary">
+            <span>AI 병렬 분석 시작</span>
+            <i data-lucide="play-circle"></i>
+          </button>
+        </form>
+      </section>
+
+      <!-- Right: Main Dashboard Display -->
+      <section class="dashboard-panel">
+        
+        <!-- INTRO STATE (Initially Visible) -->
+        <div id="panel-intro" class="glass-card welcome-card">
+          <div class="welcome-glow"></div>
+          <i data-lucide="activity" class="hero-icon"></i>
+          <h2>LSCAPE-HONG AI Dashboard</h2>
+          <p>좌측 패널에서 대상지 주소, 경계 GeoJSON 데이터, 용도지역 및 토지이음 중첩규제를 설정한 후 **"AI 병렬 분석 시작"** 버튼을 누르십시오.</p>
+          <p>중앙 오케스트레이터(Orchestrator)가 4개의 특화 서브 에이전트(Sub-agent)를 병렬 가동하여 실시간 공간 매핑과 인허가 규제 검토를 수행합니다.</p>
+          
+          <div class="features-grid">
+            <div class="feat-box">
+              <i data-lucide="git-pull-request"></i>
+              <h4>토지이음 연계</h4>
+              <p>용도지역/지구 중첩 규제 및 건축제한 분석</p>
+            </div>
+            <div class="feat-box">
+              <i data-lucide="map"></i>
+              <h4>경계 다각형 업로드</h4>
+              <p>GeoJSON 경계선 기반 3D 지형 마스킹 및 경사도 분석</p>
+            </div>
+            <div class="feat-box">
+              <i data-lucide="clock"></i>
+              <h4>인허가 타임라인</h4>
+              <p>개발행위, 산지전용 등 복합 인허가 절차도 설계</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- RUNNING STATE (Active during analysis) -->
+        <div id="panel-running" class="hidden">
+          <div class="orchestrator-status glass-card">
+            <div class="orc-header">
+              <div class="status-badge">
+                <i data-lucide="loader" class="rotating"></i>
+                <span>Orchestrator Running</span>
+              </div>
+              <span id="orchestrator-message">분석 명령 대기열 배분 중...</span>
+            </div>
+            <div class="progress-bar-container">
+              <div id="orchestrator-progress" class="progress-bar-fill" style="width: 0%"></div>
+            </div>
+            <div id="analysis-log" class="analysis-log-container" style="margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; font-family: monospace; font-size: 0.85rem; color: #a0aec0; min-height: 50px;"></div>
+          </div>
+
+          <!-- Parallel Agent Terminal Grid -->
+          <div class="agents-grid">
+            
+            <!-- Agent 1: Terrain -->
+            <div class="agent-terminal glass-card" data-agent="terrain">
+              <div class="terminal-header">
+                <span class="agent-title"><i data-lucide="mountain"></i> Terrain Agent</span>
+                <span class="status-text text-dim">Standby</span>
+              </div>
+              <div class="terminal-console" id="console-terrain"></div>
+              <div class="terminal-footer">
+                <div class="progress-mini"><div class="fill" id="progress-terrain" style="width: 0%"></div></div>
+                <span class="percentage" id="pct-terrain">0%</span>
+              </div>
+            </div>
+
+            <!-- Agent 2: Climate -->
+            <div class="agent-terminal glass-card" data-agent="climate">
+              <div class="terminal-header">
+                <span class="agent-title"><i data-lucide="wind"></i> Climate Agent</span>
+                <span class="status-text text-dim">Standby</span>
+              </div>
+              <div class="terminal-console" id="console-climate"></div>
+              <div class="terminal-footer">
+                <div class="progress-mini"><div class="fill" id="progress-climate" style="width: 0%"></div></div>
+                <span class="percentage" id="pct-climate">0%</span>
+              </div>
+            </div>
+
+            <!-- Agent 3: Regulatory -->
+            <div class="agent-terminal glass-card" data-agent="regulatory">
+              <div class="terminal-header">
+                <span class="agent-title"><i data-lucide="scale"></i> Regulatory Agent</span>
+                <span class="status-text text-dim">Standby</span>
+              </div>
+              <div class="terminal-console" id="console-regulatory"></div>
+              <div class="terminal-footer">
+                <div class="progress-mini"><div class="fill" id="progress-regulatory" style="width: 0%"></div></div>
+                <span class="percentage" id="pct-regulatory">0%</span>
+              </div>
+            </div>
+
+            <!-- Agent 4: Infrastructure -->
+            <div class="agent-terminal glass-card" data-agent="infra">
+              <div class="terminal-header">
+                <span class="agent-title"><i data-lucide="git-merge"></i> Infra Linkage Agent</span>
+                <span class="status-text text-dim">Standby</span>
+              </div>
+              <div class="terminal-console" id="console-infra"></div>
+              <div class="terminal-footer">
+                <div class="progress-mini"><div class="fill" id="progress-infra" style="width: 0%"></div></div>
+                <span class="percentage" id="pct-infra">0%</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- COMPLETED STATE (Tabs with Visualizations) -->
+        <div id="panel-completed" class="hidden">
+          
+          <!-- Navigation Tabs -->
+          <nav class="result-tabs glass-card">
+            <button class="tab-btn active" data-tab="tab-report">
+              <i data-lucide="file-text"></i> 종합 설계 보고서
+            </button>
+            <button class="tab-btn" data-tab="tab-terrain">
+              <i data-lucide="grid-3x3"></i> 지형 & 경계분석
+            </button>
+            <button class="tab-btn" data-tab="tab-climate">
+              <i data-lucide="sun-snow"></i> 기후 & 식재계획
+            </button>
+            <button class="tab-btn" data-tab="tab-regulatory">
+              <i data-lucide="file-search"></i> 토지이음 규제 & 인허가
+            </button>
+            <button class="tab-btn" data-tab="tab-statistics">
+              <i data-lucide="pie-chart"></i> 대상지 현황분석
+            </button>
+            <button class="tab-btn" data-tab="tab-parcels">
+              <i data-lucide="list"></i> 대상지 지적 목록
+            </button>
+          </nav>
+
+          <!-- Tab Contents -->
+          <div class="tab-panels">
+            
+            <!-- Tab 1: Comprehensive Report -->
+            <div id="tab-report" class="tab-content active glass-card">
+              <div class="report-actions">
+                <button id="btn-download-md" class="btn-secondary btn-sm">
+                  <i data-lucide="download"></i> 마크다운 보고서 다운로드
+                </button>
+              </div>
+              <div class="markdown-body" id="report-html-container">
+                <!-- Orchestrator compiled markdown will go here -->
+              </div>
+            </div>
+
+            <!-- Tab 2: Terrain Visualizer -->
+            <div id="tab-terrain" class="tab-content glass-card">
+              <div class="viz-split-layout">
+                <div class="viz-main-view">
+                  <h3>경계 마스킹 지형 높낮이 (3D Isometric Contour Map)</h3>
+                  <p class="description">마우스를 드래그하여 업로드된 경계선에 따라 마스킹된 지형 3D 와이어프레임을 다각도로 회전하여 분석하십시오.</p>
+                  <div class="canvas-container">
+                    <canvas id="terrain-canvas" width="500" height="400"></canvas>
+                  </div>
+                </div>
+                <div class="viz-side-stats">
+                  <h3>지형 엔지니어링 지표</h3>
+                  
+                  <div class="metric-card">
+                    <span class="label">경계 내 평균 경사도</span>
+                    <span class="value" id="val-avg-slope">0.0%</span>
+                  </div>
+                  
+                  <div class="metric-card">
+                    <span class="label">경계 내 최고 경사도</span>
+                    <span class="value" id="val-max-slope">0.0%</span>
+                  </div>
+
+                  <div class="slope-distribution">
+                    <h4>경사 분포 비율</h4>
+                    <div class="slope-bar">
+                      <div class="flat" id="dist-flat" style="width: 33%">평탄지</div>
+                      <div class="moderate" id="dist-moderate" style="width: 33%">완경사</div>
+                      <div class="steep" id="dist-steep" style="width: 34%">급경사</div>
+                    </div>
+                    <div class="distribution-legend">
+                      <span><span class="dot d-flat"></span> 평탄(0-8%): <strong id="val-dist-flat">0%</strong></span>
+                      <span><span class="dot d-moderate"></span> 구릉(8-15%): <strong id="val-dist-moderate">0%</strong></span>
+                      <span><span class="dot d-steep"></span> 절토(>15%): <strong id="val-dist-steep">0%</strong></span>
+                    </div>
+                  </div>
+
+                  <div class="grading-volume">
+                    <h4>토공량 분석 예측 (Cut & Fill)</h4>
+                    <div class="grade-boxes">
+                      <div class="grade-box cut">
+                        <i data-lucide="shovel"></i>
+                        <span>예상 절토량</span>
+                        <strong id="val-cut-vol">0 ㎥</strong>
+                      </div>
+                      <div class="grade-box fill">
+                        <i data-lucide="database"></i>
+                        <span>예상 성토량</span>
+                        <strong id="val-fill-vol">0 ㎥</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab 3: Climate & Ecology -->
+            <div id="tab-climate" class="tab-content glass-card">
+              <div class="viz-split-layout">
+                <div class="viz-main-view">
+                  <h3>미기후 환경 분석 (Micro-Climate Map)</h3>
+                  <p class="description">계절별 주풍향 차단벽 배치 및 동/서 일조 투영 각도 시각화</p>
+                  <div class="svg-container">
+                    <svg id="climate-svg" viewBox="0 0 500 400" width="100%" height="100%"></svg>
+                  </div>
+                </div>
+                <div class="viz-side-stats">
+                  <h3>기후 및 식재 권장 리포트</h3>
+                  
+                  <div class="grid-2col">
+                    <div class="metric-card">
+                      <span class="label">식물 내한성 (Hardiness Zone)</span>
+                      <span class="value" id="val-hardiness">Zone 0</span>
+                    </div>
+                    <div class="metric-card">
+                      <span class="label">겨울철 주풍향 / 풍속</span>
+                      <span class="value" id="val-wind">NW / 0m/s</span>
+                    </div>
+                  </div>
+
+                  <div class="planting-list-container">
+                    <h4>추천 향토 조경 수종 리스트</h4>
+                    <div class="planting-scroll" id="planting-cards">
+                      <!-- Planting cards generated dynamically -->
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab 4: Regulatory & Permitting (토지이음 및 인허가 타임라인) -->
+            <div id="tab-regulatory" class="tab-content glass-card">
+              <div class="regulatory-layout">
+                
+                <!-- Left Column: Simulated 토지이용계획확인서 -->
+                <div class="reg-doc-view">
+                  <div class="official-doc-header">
+                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                      <i data-lucide="file-text"></i>
+                      <h3>토지이용계획확인서 (가상 조회 시트)</h3>
+                    </div>
+                    <a href="https://www.eum.go.kr/web/am/amMain.jsp" target="_blank" class="btn-secondary btn-xs doc-link-btn">
+                      <span>실제 토지이용계획 조회</span>
+                      <i data-lucide="external-link"></i>
+                    </a>
+                  </div>
+                  
+                  <table class="official-doc-table">
+                    <tr>
+                      <td class="col-lbl">소재지</td>
+                      <td colspan="3" id="doc-address">대기 중</td>
+                    </tr>
+                    <tr>
+                      <td class="col-lbl">지목 / 면적</td>
+                      <td id="doc-category">임야</td>
+                      <td class="col-lbl">대지 면적</td>
+                      <td id="doc-area">0 ㎡</td>
+                    </tr>
+                    <tr>
+                      <td class="col-lbl">국토계획법상 용도지역</td>
+                      <td colspan="3" id="doc-zoning">대기 중</td>
+                    </tr>
+                    <tr>
+                      <td class="col-lbl">타법령상 용도지구/구역</td>
+                      <td colspan="3" id="doc-other-laws">대기 중</td>
+                    </tr>
+                    <tr>
+                      <td class="col-lbl">행위제한 주요내용</td>
+                      <td colspan="3">
+                        <ul id="doc-restrictions" class="doc-list">
+                          <!-- Prohibited acts listed dynamically -->
+                        </ul>
+                      </td>
+                    </tr>
+                  </table>
+                  
+                  <div class="timeline-container" style="margin-top: 1.5rem; max-height: none;">
+                    <h4><i data-lucide="milestone"></i> 종합 인허가 절차 로드맵 (골프장 증설 기준)</h4>
+                    <div id="permit-report-container" class="permit-report">
+                      <!-- Permit report will be injected here -->
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Right Column: Compliance Checklist & Stats -->
+                <div class="reg-checks-view">
+                  <h3>규제 검토 지표</h3>
+                  <div class="grid-2col">
+                    <div class="metric-card">
+                      <span class="label">필수 조경 면적 비율</span>
+                      <span class="value" id="val-req-ratio">0%</span>
+                    </div>
+                    <div class="metric-card">
+                      <span class="label">예상 생태면적률 (BAR)</span>
+                      <span class="value" id="val-bar">0%</span>
+                    </div>
+                  </div>
+                  
+                  <div style="margin-top: 1.5rem;">
+                    <h4><i data-lucide="check-square"></i> 규제 준수율 체크리스트</h4>
+                    <div class="checklist-container" id="checklist-container">
+                      <!-- check list -->
+                    </div>
+                  </div>
+                  </div>
+
+                  <div class="regulatory-table-wrapper">
+                    <h4>규제 적합성 체크리스트</h4>
+                    <table class="regulatory-table">
+                      <thead>
+                        <tr>
+                          <th>검토 항목</th>
+                          <th>판정</th>
+                          <th>상세 결과</th>
+                        </tr>
+                      </thead>
+                      <tbody id="regulatory-tbody">
+                        <!-- Table rows populated dynamically -->
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  <!-- Utility Info -->
+                  <div class="utility-card">
+                    <h4><i data-lucide="plug"></i> 기반 시설 연결 (Utility Links)</h4>
+                    <p> 상수 관로: <strong id="util-water">인입로 분석 중</strong></p>
+                    <p> 배수 배출구: <strong id="util-drainage">구배 분석 중</strong></p>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- TAB 6: Parcel List (대상지 지적 목록) -->
+            <div id="tab-parcels" class="tab-pane">
+              <div class="panel-header" style="margin-bottom: 2rem;">
+                <h2 style="font-size: 1.4rem; font-weight: 700; color: var(--color-primary); border-bottom: 2px solid var(--color-primary); padding-bottom: 0.5rem; margin-bottom: 1.5rem;">대상지 지적 목록 및 지목현황</h2>
+                <div class="regulatory-table-wrapper">
+                  <table class="report-table">
+                    <thead>
+                      <tr>
+                        <th style="width: 10%">연번</th>
+                        <th style="width: 40%">법정동 주소 (지번)</th>
+                        <th style="width: 15%">지목 (용도)</th>
+                        <th style="width: 15%">면적 (㎡)</th>
+                        <th style="width: 20%">PNU 코드</th>
+                      </tr>
+                    </thead>
+                    <tbody id="val-parcel-list-tbody">
+                      <!-- Dynamic Parcel items -->
+                    </tbody>
+                  </table>
+                  <div style="margin-top: 1rem; text-align: right; color: var(--color-text-dim); font-size: 0.85rem;" id="val-parcel-summary"></div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </section>
+    </main>
+  </div>
+
+  <!-- OpenStreetMap Drawing Modal -->
+  <div id="map-modal" class="modal-overlay hidden">
+    <div class="modal-content glass-card">
+      <div class="modal-header">
+        <h3><i data-lucide="map"></i> 대상지 경계선 지정 (OpenStreetMap)</h3>
+        <button id="btn-close-map" class="btn-icon"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="map-mode-toggle">
+          <button id="btn-mode-draw" class="mode-btn active"><i data-lucide="pen-tool"></i> 다각형 직접 그리기</button>
+          <button id="btn-mode-click" class="mode-btn"><i data-lucide="mouse-pointer-click"></i> 지적도 클릭 선택</button>
+        </div>
+        <div id="click-mode-tools" class="hidden flex items-center justify-center gap-4 mt-2 p-2 bg-gray-800 rounded-lg text-gray-300">
+          <label class="flex items-center gap-2 cursor-pointer hover:text-emerald-400 transition-colors">
+            <input type="radio" name="clickBehavior" value="toggle" checked class="form-radio text-emerald-500 bg-gray-700 border-gray-600 focus:ring-emerald-500">
+            <span>선택/해제 (기본)</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer hover:text-cyan-400 transition-colors">
+            <input type="radio" name="clickBehavior" value="select" class="form-radio text-cyan-500 bg-gray-700 border-gray-600 focus:ring-cyan-500">
+            <span>선택 전용</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer hover:text-red-400 transition-colors">
+            <input type="radio" name="clickBehavior" value="deselect" class="form-radio text-red-500 bg-gray-700 border-gray-600 focus:ring-red-500">
+            <span>해제 전용</span>
+          </label>
+        </div>
+        <div id="os-map" style="width: 100%; height: 500px; border-radius: 12px; background: #e5e5e5; z-index: 1;"></div>
+        <p id="map-instruction-text" class="map-instruction">
+          <i data-lucide="info"></i> 좌측 툴바에서 <strong>다각형(Draw Polygon)</strong> 도구를 선택한 후, 지도 위에 점을 찍어 대상지 경계를 그리세요.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-apply-map" class="btn-primary">선택 완료 및 좌표 가져오기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Scripts -->
+  <script src="agents.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
